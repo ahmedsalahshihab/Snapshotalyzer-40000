@@ -13,14 +13,14 @@ def filter_instances(project):
 
 ####################################################################
 
-@click.group()
+@click.group()		#Check https://click.palletsprojects.com/en/7.x/quickstart/#nesting-commands for nesting commands
 def instances():
 	"Commands for EC2 instances"
 
-@instances.command('list')
+@instances.command('list')		#'list' --> this is the command name now
 @click.option('--project', default=None, help='Only instances for project (tag Project:<name>)')
 def list_instances(project):
-	"List EC2 instances"
+	"Lists EC2 instances"
 
 	instances_list = filter_instances(project)
 	for i in instances_list:
