@@ -1,5 +1,6 @@
 import boto3
 import click
+import botocore		#https://boto3.amazonaws.com/v1/documentation/api/latest/guide/error-handling.html
 
 session = boto3.Session(profile_name='shotty')
 ec2sr = session.resource('ec2')
@@ -10,6 +11,15 @@ def filter_instances(project):
 		return ec2sr.instances.filter(Filters=filters)
 	else:
 		return ec2sr.instances.all()
+
+def has_pending_snapshot(volume):
+	all_snapshots = volume.snapshots.all()
+	for s in all_snapshots:
+		if (s.state == "pending"):
+			return True
+			break
+	else:
+		return False
 
 ####################################################################
 
@@ -39,8 +49,12 @@ def start_instances(project):
 
 	instances_list = filter_instances(project)
 	for i in instances_list:
-			i.start()
+		try:
 			print("Starting EC2 instance " + str(i.instance_id))
+			i.start()
+		except botocore.exceptions.ClientError as e:
+			print(" Could not start instance {0}. ".format(i.id) + str(e))
+
 
 @instances.command('stop')
 @click.option('--project', default=None, help='Only instances for project (tag Project:<name>)')
@@ -49,8 +63,11 @@ def stop_instances(project):
 
 	instances_list = filter_instances(project)
 	for i in instances_list:
-			i.stop()
+		try:
 			print("Stopping EC2 instance " + str(i.instance_id))
+			i.stop()
+		except botocore.exceptions.ClientError as e:
+			print(" Could not stop instance {0}. ".format(i.id) + str(e))
 
 @instances.command('snapshot')
 @click.option('--project', default=None, help='Only instances for project (tag Project:<name>)')
@@ -63,13 +80,15 @@ def create_snapshot(project):
 		i.stop()
 		i.wait_until_stopped()
 		for v in i.volumes.all():
-			print(" Creating snapshot of {0}".format(v.id))
-			v.create_snapshot(Description='Created by SnapshotAlyzer 40000')
+			if (has_pending_snapshot(v)):
+				print(" Skipping {0}, snapshot already in progress".format(v.id))
+			else:
+				print(" Creating snapshot of {0}".format(v.id))
+				v.create_snapshot(Description='Created by SnapshotAlyzer 40000')
 		print("Starting instance {0}".format(i.id))
 		i.start()
 		i.wait_until_running()
 	print("Job's done!")
-
 
 ####################################################################
 
@@ -95,7 +114,8 @@ def snapshots():
 
 @snapshots.command('list')
 @click.option('--project', default=None, help='Only snapshots for project (tag Project:<name>)')
-def list_snapshots(project):
+@click.option('--all', default=False, is_flag=True, help="List all snapshots for each volume, not just the most recent")
+def list_snapshots(project, all):
 	"Lists snapshots"
 
 	instances_list = filter_instances(project)
@@ -103,6 +123,8 @@ def list_snapshots(project):
 		for v in i.volumes.all():
 			for s in v.snapshots.all():
 				print(', '.join((i.id, s.id, s.volume_id, s.start_time.strftime("%c"), s.state, s.progress)))
+				if ((s.state == "completed") and (all==False)):		
+					break	 
 
 ####################################################################
 
